@@ -111,7 +111,8 @@ class FunctionalGroup(object):
                  '_g', '_fixed_elem', '_fuzzy_elem']
 
     def __init__(self, name=None, charge=None, elements=None, bonds=None, max_bonds=None):
-
+        
+        # why not using position arguments?
         assert name is not None, 'FunctionalGroup must have a name!'
         assert charge is not None, 'FunctionalGroup must have a charge!'
         assert elements is not None, 'FunctionalGroup must have atoms!'
