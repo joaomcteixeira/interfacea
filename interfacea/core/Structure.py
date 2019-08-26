@@ -35,7 +35,7 @@ import simtk.openmm.app as app
 import simtk.unit as units
 
 from interfacea import RANDOM_SEED
-from iterfacea.core.exceptions import InterfaceaError
+from interfacea.core.exceptions import InterfaceaError
 from interfacea.chemistry import data
 from interfacea.src.kdtree import kdtrees
 
