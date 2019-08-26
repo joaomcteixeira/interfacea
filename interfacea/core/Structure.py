@@ -35,6 +35,7 @@ import simtk.openmm.app as app
 import simtk.unit as units
 
 from interfacea import RANDOM_SEED
+from iterfacea.core.exceptions import InterfaceaError
 from interfacea.chemistry import data
 from interfacea.src.kdtree import kdtrees
 
@@ -45,7 +46,7 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 # Classes
 
-class StructureError(Exception):
+class StructureError(InterfaceaError):
     """Base class for all exceptions related to `Structure` objects."""
     pass
 
@@ -289,12 +290,6 @@ class Structure(object):
                 raise StructureWriteError(emsg)
             logging.debug(f'Auto-assigned file type from file name: {ftype}')
 
-        # Assign writer class
-        writer = _writers.get(ftype)
-        if writer is None:
-            emsg = f"Unsupported or unknown file type: '{ftype}'"
-            raise StructureWriteError(emsg)
-
         # Write
         if fpath.exists() and not overwrite:
             emsg = 'File already exists. Use overwrite=True or remove file.'
@@ -302,7 +297,10 @@ class Structure(object):
 
         try:
             with fpath.open(mode='w') as handle:
-                writer(self.topology, self.positions, handle, keepIds=True)
+                _writer[ftype](self.topology, self.positions, handle, keepIds=True)
+        except KeyError as e:
+            emsg = f"Unsupported or unknown file type: '{ftype}'"
+            raise StructureWriteError(emsg)
         except Exception as e:
             emsg = f'Unexpected error when writing file: {output}'
             raise StructureWriteError(emsg) from e
@@ -445,6 +443,8 @@ class Structure(object):
                        'There is nothing wrong with your structure. To remove '
                        'this warning, consider installing the latest version '
                        'of OpenMM from git')
+                # should the above be handled by the requirements.txt ?
+                # nice one btw, expect the unexpected
                 warnings.warn(msg)
 
                 s.addMissingAtoms()
@@ -664,10 +664,10 @@ class Structure(object):
 
         _openmm_types = (app.topology.Residue, app.topology.Chain)
 
-        if not isinstance(entity, list):
-            _list = [entity]
-        else:
+        if isinstance(entity, list):
             _list = entity
+        else:
+            _list = [entity]
 
         # Unpack to Atoms
         atom_idx_list = []
@@ -806,27 +806,8 @@ class Structure(object):
             Tuples are of the form: (entity_i, entity_j, min distance).
         """
 
-        # Utility functions to retrieve parent objects
-        def get_residue(atomdict, atom_idx):
-            """Returns the Residue object associated with the atom index.
-
-            Waives checking of index == None for performance. Assumes the
-            output comes from the KDtree search so it should be fine.
-            """
-            atom = atomdict.get(atom_idx)
-            return atom.residue
-
-        def get_chain(atomdict, atom_idx):
-            """Returns the Chain object associated with the atom index.
-
-            Waives checking of index == None for performance. Assumes the
-            output comes from the KDtree search so it should be fine.
-            """
-            atom = atomdict.get(atom_idx)
-            return atom.residue.chain
-
-        _get_parent = {'residue': get_residue,
-                       'chain': get_chain}
+        _get_parent = {'residue': self._get_residue,
+                       'chain': self._get_chain}
 
         if level.lower() not in ('atom', 'residue', 'chain'):
             emsg = f"'level' must be 'atom', 'residue' or 'chain': {level}"
@@ -885,3 +866,24 @@ class Structure(object):
         logging.debug(msg)
 
         return result
+
+    # Utility functions to retrieve parent objects
+    @staticmethod
+    def _get_residue(atomdict, atom_idx):
+        """Returns the Residue object associated with the atom index.
+
+        Waives checking of index == None for performance. Assumes the
+        output comes from the KDtree search so it should be fine.
+        """
+        atom = atomdict.get(atom_idx)
+        return atom.residue
+    
+    @staticmethod
+    def _get_chain(atomdict, atom_idx):
+        """Returns the Chain object associated with the atom index.
+
+        Waives checking of index == None for performance. Assumes the
+        output comes from the KDtree search so it should be fine.
+        """
+        atom = atomdict.get(atom_idx)
+        return atom.residue.chain
