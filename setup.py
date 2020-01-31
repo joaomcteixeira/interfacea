@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Copyright 2018 João Pedro Rodrigues
 #
@@ -22,6 +23,9 @@ After downloading and uncompressing the source code, or cloning it from git,
 type the following command:
 
     python setup.py install
+
+As a developer, to test your changes without installing the package please use:
+    python setup.py develop
 """
 
 #
@@ -29,45 +33,58 @@ type the following command:
 #
 
 import os
+from pathlib import Path
 import sys
 
 from setuptools import setup
-# from setuptools import Command
 from setuptools import Extension
 
 from setuptools.command.install import install
 from setuptools.command.build_py import build_py
 from setuptools.command.build_ext import build_ext
 
-__version__ = "0.1"
-
 # Check for Python version
-if sys.version_info[0] != 3:
-    sys.stderr.write("interfacea requires Python 3.x. "
+if sys.version_info < (3, 6):
+    sys.stderr.write("interfacea requires Python 3.6+. "
                      "Python %d.%d detected.\n" % sys.version_info[:2])
     sys.exit(1)
 
+
+# Get version from code
+def get_version():
+    """Read the variable version from interfacea/_version.py"""
+
+    f = Path('./interfacea') / '_version.py'
+    contents = f.read_text()
+    version = contents.strip().split()[-1]
+    return version[1:-1]
+
+
+# Get long description
+def get_long_description():
+    """Reads the contents of the README file"""
+    contents = Path('README.rst').read_text()
+    return contents
+
+
 PACKAGES = [
     'interfacea',
-    'interfacea.private',
+    'interfacea.core',
+    'interfacea.analyzers',
+    'interfacea.chemistry',
 ]
 
 EXTENSIONS = [
-    Extension('interfacea.src.kdtrees',
-              [os.path.join('interfacea', 'src', 'kdtrees.c')]),
+    Extension('interfacea.src.kdtree.kdtrees',
+              [os.path.join('interfacea', 'src', 'kdtree', 'kdtrees.c')]),
 ]
 
 REQUIRES = [
     'networkx',
     'numpy',
     'openmm',
-    'pandas',
     'pdbfixer',
 ]
-
-# For long description
-with open("README.md", "rb") as handle:
-    readme = handle.read().decode("ascii")
 
 #
 # Install/Build/Test classes
@@ -92,26 +109,19 @@ class build_extensions(build_ext):
         build_ext.run(self)
 
 
-# class run_tests(Command):
-#     """Run all of the tests for the package.
-#     """
-
-#     description = "Automatically run the test suite (in test/)"
-#     user_options = []
-
-
 setup(name='interfacea',
-      version=__version__,
+      version=get_version(),
       author='Joao Rodrigues',
       author_email='j.p.g.l.m.rodrigues@gmail.com',
       url='https://github.com/joaorodrigues/interfacea',
-      description='Open-source library to analyze the structure and energetics of biomolecular interfaces',
-      long_description=readme,
+    #   download_url=''  # TODO: add url to release using version string.
+      description='Open-source library to analyze the structure and energetics of protein interfaces',
+      long_description=get_long_description(),
       classifiers=[
-          'Development Status :: 5 - Production/Stable',
+          'Development Status :: 3 - Alpha',
           'Intended Audience :: Developers',
           'Intended Audience :: Science/Research',
-          'License :: Freely Distributable',  # Change
+          'License :: OSI Approved :: Apache Software License',
           'Operating System :: OS Independent',
           'Programming Language :: Python',
           'Programming Language :: Python :: 3',
@@ -124,7 +134,6 @@ setup(name='interfacea',
           "install": install_library,
           "build_py": build_py_modules,
           "build_ext": build_extensions,
-          # "test": run_tests,
       },
       packages=PACKAGES,
       ext_modules=EXTENSIONS,

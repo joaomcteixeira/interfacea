@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Copyright 2018 João Pedro Rodrigues
 #
@@ -19,72 +20,130 @@ Code to calculate pairwise residue energies in macromolecular structures.
 """
 
 import logging
-import os
+import pathlib
+import random
 
-import simtk.openmm.app as app
-
-from .structure import Structure
-from .structure import StructureError
-
-from .interactions import InteractionAnalyzer
-from .private.internal import *
+from .io import readers
+from .io.StructureBuilder import StructureBuilder
+import _version
 
 # Setup logger
 # This is the parent logger since the library is supposed
 # to be loaded from here. Hence, configs set here apply to
 # all module-level loggers
 logging.getLogger(__name__).addHandler(logging.NullHandler())
+logging.getLogger(__name__).setLevel(logging.CRITICAL)
 
-# Global Methods
-def read(fpath, ftype=None):
-    """Creates a `Structure` instance from a PDB/mmCIF file.
+# Global Constants
+RANDOM_SEED = random.randint(0, 1000)  # user can set it manually later
+__version__ = _version.__version__
+
+# Methods
+def set_log_level(level='verbose'):
+    """Enables logging to a certain level.
+
+    Useful for interactive/debugging applications.
 
     Args:
-        fpath (str): path to file to be parsed.
-        ftype (:obj:`str`, optional): file type (PDB or mmCIF). `None` defaults
-            to guessing the file type from the extension.
-
-    Returns:
-        :obj:`Structure`: new instance of `Structure` class defining a topology
-            and positions for the input structure.
-
-    Raises:
-        StructureError: generic error class for problems during structure parsing
-            or conversion with OpenMM.
+        level (str): verbosity/type of logging. Choose from:
+            - 'silent': disables logging.
+            - 'minimal': only warnings and other critical messages
+            - 'verbose': informative/descriptive messages (default).
+            - 'debug': very verbose internal/diagnostic messages.
     """
 
-    _pdb_formats = {'pdb', 'ent'}
-    _cif_formats = {'cif', 'mmcif'}
-    _formats = _pdb_formats | _cif_formats
-    _formats_str = ','.join(_formats)
+    # Logging levels
+    _lc = {
+           'minimal': logging.WARNING,
+           'verbose': logging.INFO,
+           'debug': logging.DEBUG
+          }
 
-    logging.debug('Reading file: {}'.format(fpath))
+    if level not in _lc and level != 'silent':
+        emsg = f"Unknown or unsupported log level: {level}"
+        raise ValueError(emsg)
 
-    fullpath = os.path.abspath(fpath)
-    if not os.path.isfile(fullpath):
-        emsg = 'File could not be read: {}'.format(fullpath)
-        raise StructureError(emsg)
+    # Treat 'silent' differently
+    if level == 'silent':
+        root_logger = logging.getLogger()
+        root_logger.handlers = []  # clear handler list
+        root_logger.setLevel(logging.CRITICAL)
+        return
 
-    fname, fext = os.path.splitext(fullpath)
-    ftype = ftype if ftype is not None else fext[1:]
-    logging.debug('Assigned file type: {}'.format(ftype))
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(fmt='[%(asctime)s] %(message)s',
+                                  datefmt='%H:%M:%S')
+    handler.setFormatter(formatter)
 
-    if ftype in _pdb_formats:
-        try:
-            struct = app.PDBFile(fullpath)
-        except Exception as e:
-            emsg = 'Failed parsing file {} as \'PDB\' format'.format(fullpath)
-            raise StructureError(emsg) from e
+    # We override the root logger here, assuming this function is only called
+    # interactively ...
+    root_logger = logging.getLogger()
+    root_logger.handlers = []  # clear handler list
+    root_logger.addHandler(handler)
 
-    elif ftype in _cif_formats:
-        try:
-            struct = app.PDBxFile(fullpath)
-        except Exception as e:
-            emsg = 'Failed parsing file {} as \'mmCIF\' format'.format(fullpath)
-            raise StructureError(emsg) from e
+    log_level = _lc.get(level)
+    root_logger.setLevel(log_level)
+    logging.warn(f"Logging activated and set to '{level}'")  # always show
+
+
+# Randomness
+def set_random_seed(seed=917):
+    """Sets a defined seed for reproducible operations across the library.
+
+    This does not ensure *complete reproducibility*. Some methods in OpenMM,
+    for example, are not deterministic across different hardware configurations
+    even with the same random seed.
+    """
+
+    global RANDOM_SEED
+
+    if isinstance(seed, int) and seed > 0:
+        RANDOM_SEED = seed
     else:
-        emsg = '\'{}\' is not one of the supported types: {}'.format(ftype, _formats_str)
-        raise StructureError(emsg)
+        emsg = f"Random seed must be a positive integer: {seed}"
+        raise TypeError(emsg)
 
-    logging.debug('File parsed successfully using OpenMM reader.')
-    return Structure(os.path.basename(fname), struct)
+
+# High-level IO
+def read(filepath, **kwargs):
+    """High-level method to create Structures from data files.
+
+    Reader classes are picked based on the file extension, e.g. a .pdb file
+    will be parsed by the io.PDBReader class. The mapping between extensions
+    and readers is defined in io. Refer to that file and to each of the reader
+    classes for more information on their arguments and options.
+
+    Args:
+        filepath (str): path to the file to be read.
+        name (str, optional): string to use as the resulting Structure name.
+            Defaults to the input file name.
+        precision (np.dtype, optional): numerical precision for storing
+            atomic coordinates. Defaults to np.float16.
+        discard_altloc (bool, optional): keep only the instance of each atom with
+            the highest occupancy value if True. Default is False.
+    Returns:
+        a Structure object containing atom coordinates and metadata.
+    """
+
+    # Validate Path
+    try:
+        path = pathlib.Path(filepath).resolve(strict=True)
+    except FileNotFoundError:
+        emsg = f"File not found or not readable: {filepath}"
+        raise FileNotFoundError(emsg) from None
+    except Exception as err:
+        emsg = f"Unexpected error when parsing file path: {filepath}"
+        raise IOError(emsg) from err
+
+    # Parse Data
+    try:
+        r = readers[path.suffix]
+    except KeyError:
+        emsg = f"Extension not supported ({path.suffix}) for file {path}"
+        raise IOError(emsg) from None
+    else:
+        data = r(path, kwargs)
+
+    # Build Structure
+    name = kwargs.get('name', path.name)
+    return StructureBuilder.build(name, data, kwargs)

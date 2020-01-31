@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Copyright 2018 João Pedro Rodrigues
 #
@@ -17,8 +18,6 @@
 """
 Analysis of Biomolecular Interfaces.
 """
-
-from __future__ import print_function
 
 import logging
 
